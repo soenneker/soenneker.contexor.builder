@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <Platforms>AnyCPU</Platforms>
+        <NoWarn>$(NoWarn);1591</NoWarn>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <Description>Generates strongly typed C# JSON-RPC 2.0 clients from JSON Schema protocol bundles, including Codex app-server.</Description>
+        <Version Condition="'$(BUILD_VERSION)' == ''">4.0.0</Version>
+        <Version Condition="'$(BUILD_VERSION)' != ''">$(BUILD_VERSION)</Version>
+        <AssemblyName>Soenneker.Contexor.Builder</AssemblyName>
+        <PackageId>Soenneker.Contexor.Builder</PackageId>
+        <PackageTags>contexor builder jsonrpc codex jsonschema client generator csharp contexorbuilder util dotnet c# .net</PackageTags>
+        <Copyright>Copyright © 2026 Jake Soenneker</Copyright>
+        <Authors>Jake Soenneker</Authors>
+        <Company>https://soenneker.com</Company>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <IsPackable>true</IsPackable>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/soenneker/soenneker.contexor.builder</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/soenneker/soenneker.contexor.builder</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <RepositoryBranch>main</RepositoryBranch>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <LangVersion>latest</LangVersion>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>icon.png</PackageIcon>
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Templates\*.txt" LogicalName="Contexor.Templates.%(Filename)%(Extension)" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+        <PackageReference Include="Soenneker.Extensions.Char" Version="4.0.102" />
+        <PackageReference Include="Soenneker.Extensions.Stream" Version="4.0.148" />
+        <PackageReference Include="Soenneker.Extensions.String" Version="4.0.745" />
+        <PackageReference Include="Soenneker.Extensions.Task" Version="4.0.128" />
+        <PackageReference Include="Soenneker.Extensions.ValueTask" Version="4.0.121" />
+        <PackageReference Include="Soenneker.Utils.Directory" Version="4.0.930" />
+        <PackageReference Include="Soenneker.Utils.File" Version="4.0.2261" />
+        <PackageReference Include="Soenneker.Utils.PooledStringBuilders" Version="4.0.29" />
+    </ItemGroup>
+</Project>
+
+

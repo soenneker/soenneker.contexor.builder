@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <GeneratedClientProject Condition="'$(GeneratedClientProject)' == '' and Exists('C:/git/codex/output/CodexClient.csproj')">C:/git/codex/output/CodexClient.csproj</GeneratedClientProject>
+    <GeneratedClientProject Condition="'$(GeneratedClientProject)' == ''">C:/codex/output/CodexClient.csproj</GeneratedClientProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(GeneratedClientProject)" />
+  </ItemGroup>
+</Project>

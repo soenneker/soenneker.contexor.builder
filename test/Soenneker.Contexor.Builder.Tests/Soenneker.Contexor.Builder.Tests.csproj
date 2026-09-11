@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Remove="appsettings.json" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="appsettings.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Soenneker.Utils.Process" Version="4.0.1553" />
+        <PackageReference Include="Soenneker.Utils.Test" Version="4.0.328" />
+        <PackageReference Include="Soenneker.Tests.Attributes.Local" Version="4.0.104" />
+        <PackageReference Include="Soenneker.Tests.HostedUnit" Version="4.0.262" />
+        <PackageReference Include="TUnit" Version="1.66.27" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="..\..\examples\*.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /><Content Include="ConsumerProgram.txt" CopyToOutputDirectory="PreserveNewest" /><Content Include="NativeAotConsumer.txt" CopyToOutputDirectory="PreserveNewest" />
+        <ProjectReference Include="..\..\src\Soenneker.Contexor.Builder\Soenneker.Contexor.Builder.csproj" />
+    </ItemGroup>
+
+</Project>

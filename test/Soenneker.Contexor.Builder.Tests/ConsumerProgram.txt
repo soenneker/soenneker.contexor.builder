@@ -1,0 +1,307 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Net;
+using System.Net.Sockets;
+using System.Net.WebSockets;
+using System.Reflection;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
+using Example;
+using Example.Models;
+
+using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(75));
+CancellationToken ct = timeout.Token;
+JsonSerializerOptions json = RpcJsonContext.Default.Options;
+if (JsonSerializer.IsReflectionEnabledByDefault) throw new Exception("JSON reflection must be disabled for this test.");
+var primary = JsonNode.Parse(File.ReadAllText("input.json"))!.AsObject();
+var definitions = primary["definitions"]!.AsObject();
+var supplement = JsonNode.Parse(File.ReadAllText("supplement.json"))!["definitions"]!.AsObject();
+foreach (var pair in supplement)
+    if (pair.Key != "v2" && !definitions.ContainsKey(pair.Key))
+        definitions[pair.Key] = JsonNode.Parse(pair.Value!.ToJsonString().Replace("#/definitions/v2/", "#/definitions/"));
+var overrides = new Dictionary<string, string>
+{
+    ["config/value/write"] = "ConfigWriteResponse", ["config/batchWrite"] = "ConfigWriteResponse",
+    ["config/mcpServer/reload"] = "McpServerRefreshResponse", ["windowsSandbox/readiness"] = "WindowsSandboxReadinessResponse",
+    ["account/logout"] = "LogoutAccountResponse", ["account/rateLimits/read"] = "GetAccountRateLimitsResponse",
+    ["account/usage/read"] = "GetAccountTokenUsageResponse", ["configRequirements/read"] = "ConfigRequirementsReadResponse"
+};
+static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+static async Task Reject<T>(Func<Task> action) where T : Exception
+{
+    try { await action(); } catch (T) { return; }
+    throw new Exception("Expected " + typeof(T).Name);
+}
+string Name(string wire) => string.Concat(wire.Split(new[] { '/', '.', '_', '-' }).Select(s => char.ToUpperInvariant(s[0]) + s[1..]));
+JsonNode? Sample(JsonNode? node, int depth = 0)
+{
+    if (depth > 60) throw new Exception("Recursive required schema: " + node);
+    if (node is not JsonObject schema) return JsonValue.Create("arbitrary-json");
+    if (schema["$ref"] is { } reference) return Sample(definitions[reference.ToString().Split('/').Last()], depth + 1);
+    if (schema["enum"] is JsonArray values) return values[0]?.DeepClone();
+    if (schema["const"] is { } constant) return constant.DeepClone();
+    foreach (string key in new[] { "oneOf", "anyOf", "allOf" })
+        if (schema[key] is JsonArray branches)
+        {
+            JsonNode? chosen = Sample(branches.FirstOrDefault(b => b?["type"]?.ToString() == "null") ?? branches[0], depth + 1);
+            if (chosen is JsonObject combined && schema["required"] is JsonArray common)
+                foreach (var member in common) combined[member!.ToString()] = Sample(schema["properties"]![member.ToString()], depth + 1);
+            return chosen;
+        }
+    if (schema["type"] is JsonArray types)
+    {
+        if (types.Any(t => t?.ToString() == "null")) return null;
+        schema = schema.DeepClone().AsObject(); schema["type"] = types[0]!.DeepClone();
+    }
+    switch (schema["type"]?.ToString())
+    {
+        case "null": return null;
+        case "object":
+            var result = new JsonObject();
+            foreach (var member in (schema["required"] as JsonArray ?? []))
+                result[member!.ToString()] = Sample(schema["properties"]![member.ToString()], depth + 1);
+            return result;
+        case "array": return new JsonArray();
+        case "boolean": return JsonValue.Create(false);
+        case "integer": return JsonValue.Create((long)Math.Ceiling(schema["minimum"]?.GetValue<decimal>() ?? 1));
+        case "number": return schema["minimum"]?.DeepClone() ?? JsonValue.Create(1);
+        case "string": return JsonValue.Create(schema["format"]?.ToString() == "uri" ? "https://example.com" : "sample");
+        default: return JsonValue.Create("arbitrary-json");
+    }
+}
+string ResultName(string wire, JsonNode? parameters)
+{
+    if (overrides.TryGetValue(wire, out var mapped)) return mapped;
+    string? reference = parameters?["$ref"]?.ToString().Split('/').Last();
+    return reference?.EndsWith("Params", StringComparison.Ordinal) == true ? reference[..^6] + "Response" : Name(wire) + "Response";
+}
+async Task<JsonObject> Read(StreamReader reader) => JsonNode.Parse(await reader.ReadLineAsync(ct) ?? throw new EndOfStreamException())!.AsObject();
+async Task Write(StreamWriter writer, JsonObject message) => await writer.WriteLineAsync(message.ToJsonString().AsMemory(), ct);
+JsonObject Reply(JsonObject request, JsonNode? result) => new() { ["id"] = request["id"]!.DeepClone(), ["result"] = result };
+
+using var listener = new TcpListener(IPAddress.Loopback, 0);
+listener.Start();
+using var local = new TcpClient();
+var accept = listener.AcceptTcpClientAsync(ct);
+await local.ConnectAsync(IPAddress.Loopback, ((IPEndPoint)listener.LocalEndpoint).Port, ct);
+using var remote = await accept;
+listener.Stop();
+using var peerReader = new StreamReader(remote.GetStream(), Encoding.UTF8, false, 4096, true);
+using var peerWriter = new StreamWriter(remote.GetStream(), new UTF8Encoding(false), 4096, true) { AutoFlush = true, NewLine = "\n" };
+await using var transport = new StreamJsonRpcTransport(local.GetStream(), local.GetStream());
+await using var client = new CodexClient(transport);
+
+// Exercise every generated outgoing request over a real duplex stream.
+int calls = 0;
+var ids = new HashSet<string>();
+foreach (JsonNode envelope in definitions["ClientRequest"]!["oneOf"]!.AsArray()!)
+{
+    string wire = envelope["properties"]!["method"]!["enum"]![0]!.ToString();
+    MethodInfo method = typeof(CodexClient).GetMethod(Name(wire))!;
+    var parameters = method.GetParameters();
+    JsonNode? parameterSchema = envelope["properties"]!["params"];
+    JsonNode? payload = parameterSchema == null ? null : Sample(parameterSchema);
+    object?[] arguments = parameters.Length == 1 ? [ct] : [JsonSerializer.Deserialize(payload?.ToJsonString() ?? "null", parameters[0].ParameterType, json), ct];
+    object operation = method.Invoke(client, arguments)!;
+    Task task = (Task)operation.GetType().GetMethod("AsTask")!.Invoke(operation, null)!;
+    JsonObject sent = await Read(peerReader);
+    Check(!sent.ContainsKey("jsonrpc") && sent["method"]!.ToString() == wire, "Codex wire method/version: " + wire);
+    Check(ids.Add(sent["id"]!.ToString()), "Unique ID");
+    Check(JsonNode.DeepEquals(sent["params"], payload), "Exact typed parameter roundtrip: " + wire);
+    string responseName = ResultName(wire, parameterSchema);
+    JsonNode? response = Sample(definitions[responseName]);
+    await Write(peerWriter, Reply(sent, response));
+    try { await task.WaitAsync(ct); }
+    catch (Exception e) { throw new Exception("Response failed for " + wire + ": " + response?.ToJsonString(), e); }
+    object? typed = task.GetType().GetProperty("Result")!.GetValue(task);
+    Check(JsonNode.DeepEquals(JsonNode.Parse(JsonSerializer.Serialize(typed, typed!.GetType(), json)), response), "Exact typed result roundtrip: " + wire);
+    calls++;
+}
+Check(calls == 85, "All 85 requests were exercised");
+await client.Initialized(ct);
+var initialized = await Read(peerReader);
+Check(initialized["method"]!.ToString() == "initialized" && !initialized.ContainsKey("id"), "initialized notification");
+
+// Every declared server notification dispatches its typed payload.
+int notificationCount = 0;
+foreach (JsonNode envelope in definitions["ServerNotification"]!["oneOf"]!.AsArray()!)
+{
+    string wire = envelope["properties"]!["method"]!["enum"]![0]!.ToString();
+    EventInfo ev = typeof(CodexClient).GetEvent(Name(wire) + "Received")!;
+    var received = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+    Type type = ev.EventHandlerType!.GenericTypeArguments[0];
+    var parameter = Expression.Parameter(type);
+    var callback = Expression.Lambda(ev.EventHandlerType, Expression.Call(Expression.Constant(received), typeof(TaskCompletionSource<object>).GetMethod("SetResult")!, Expression.Convert(parameter, typeof(object))), parameter).Compile();
+    ev.AddEventHandler(client, callback);
+    JsonNode? payload = Sample(envelope["properties"]!["params"]);
+    await Write(peerWriter, new JsonObject { ["method"] = wire, ["params"] = payload });
+    object value = await received.Task.WaitAsync(ct);
+    Check(JsonNode.DeepEquals(JsonNode.Parse(JsonSerializer.Serialize(value, type, json)), payload), "Notification roundtrip: " + wire);
+    ev.RemoveEventHandler(client, callback);
+    notificationCount++;
+}
+Check(notificationCount == 66, "All 66 notifications dispatched");
+
+// Every server-request handler is typed and replies with the peer's numeric ID.
+int serverRequests = 0;
+foreach (JsonNode envelope in definitions["ServerRequest"]!["oneOf"]!.AsArray()!)
+{
+    string wire = envelope["properties"]!["method"]!["enum"]![0]!.ToString();
+    PropertyInfo property = typeof(CodexClient).GetProperty(Name(wire) + "Handler")!;
+    Type[] generic = property.PropertyType.GenericTypeArguments;
+    JsonNode? response = Sample(definitions[ResultName(wire, envelope["properties"]!["params"])]);
+    Type responseType = generic[2].GenericTypeArguments[0];
+    Delegate callback = (Delegate)typeof(Handlers).GetMethod("Create")!.MakeGenericMethod(generic[0], responseType).Invoke(null, [response?.ToJsonString() ?? "null"])!;
+    property.SetValue(client, callback);
+    await Write(peerWriter, new JsonObject { ["method"] = wire, ["id"] = 100 + serverRequests, ["params"] = Sample(envelope["properties"]!["params"]) });
+    JsonObject reply = await Read(peerReader);
+    Check(reply["id"]!.GetValue<int>() == 100 + serverRequests && JsonNode.DeepEquals(reply["result"], response), "Server request reply: " + wire + " " + reply);
+    property.SetValue(client, null);
+    serverRequests++;
+}
+Check(serverRequests == 10, "All 10 server requests handled");
+await Write(peerWriter, new JsonObject { ["method"] = "unsupported/request", ["id"] = "peer-id", ["params"] = new JsonObject() });
+var unknown = await Read(peerReader);
+Check(unknown["id"]!.ToString() == "peer-id" && unknown["error"]!["code"]!.GetValue<int>() == -32601, "Unknown request error");
+
+// Server handlers can await an outgoing request while the independent read loop correlates its reply.
+client.AttestationGenerateHandler = async (parameters, token) =>
+{
+    var loaded = await client.ThreadLoadedList(new ThreadLoadedListParams(), token);
+    return new AttestationGenerateResponse { Token = loaded.Data[0] };
+};
+await Write(peerWriter, new JsonObject { ["method"] = "attestation/generate", ["id"] = "reentrant", ["params"] = new JsonObject() });
+var nested = await Read(peerReader);
+await Write(peerWriter, Reply(nested, JsonNode.Parse("""{"data":["nested-result"],"nextCursor":null}""")));
+var nestedReply = await Read(peerReader);
+Check(nestedReply["id"]!.ToString() == "reentrant" && nestedReply["result"]!["token"]!.ToString() == "nested-result", "Reentrant server handler");
+client.AttestationGenerateHandler = null;
+// Concurrent calls, reverse-order replies, RPC errors, in-flight cancellation, late replies.
+var first = client.ThreadLoadedList(new ThreadLoadedListParams(), ct).AsTask();
+var second = client.ThreadLoadedList(new ThreadLoadedListParams(), ct).AsTask();
+var a = await Read(peerReader); var b = await Read(peerReader);
+await Write(peerWriter, Reply(b, JsonNode.Parse("""{"data":["second"],"nextCursor":null}""")));
+await Write(peerWriter, Reply(a, JsonNode.Parse("""{"data":["first"],"nextCursor":null}""")));
+Check((await first).Data[0] == "first" && (await second).Data[0] == "second", "Out-of-order correlation");
+var errorTask = client.ThreadLoadedList(new ThreadLoadedListParams(), ct).AsTask();
+var errorRequest = await Read(peerReader);
+await Write(peerWriter, new JsonObject { ["id"] = errorRequest["id"]!.DeepClone(), ["error"] = JsonNode.Parse("""{"code":-32001,"message":"test error","data":{"detail":7}}""") });
+try { await errorTask; throw new Exception("Missing RPC error"); }
+catch (JsonRpcException e) { Check(e.Code == -32001 && e.ErrorData!.Value.GetProperty("detail").GetInt32() == 7, "Error details preserved"); }
+using (var canceled = new CancellationTokenSource())
+{
+    var pending = client.ThreadLoadedList(new ThreadLoadedListParams(), canceled.Token).AsTask();
+    var request = await Read(peerReader);
+    canceled.Cancel();
+    await Reject<OperationCanceledException>(async () => await pending);
+    await Write(peerWriter, Reply(request, JsonNode.Parse("""{"data":[],"nextCursor":null}""")));
+}
+var malformedTask = client.ThreadLoadedList(new ThreadLoadedListParams(), ct).AsTask();
+var malformed = await Read(peerReader);
+var malformedReply = Reply(malformed, new JsonObject()); malformedReply["error"] = new JsonObject();
+await Write(peerWriter, malformedReply);
+await Reject<JsonRpcProtocolException>(async () => await malformedTask);
+
+foreach (string error in new[] { """{"code":"bad","message":"bad"}""", """{"code":1,"message":false}""" })
+{
+    var pending = client.ThreadLoadedList(new ThreadLoadedListParams(), ct).AsTask();
+    var request = await Read(peerReader);
+    await Write(peerWriter, new JsonObject { ["id"] = request["id"]!.DeepClone(), ["error"] = JsonNode.Parse(error) });
+    await Reject<JsonRpcProtocolException>(async () => await pending);
+}
+var disconnected = client.ThreadLoadedList(new ThreadLoadedListParams(), ct).AsTask();
+await Read(peerReader);
+remote.Close();
+await Reject<EndOfStreamException>(async () => await disconnected);
+await client.Completion.WaitAsync(ct);
+// Unions preserve selected variants and reject invalid tags; omission differs from explicit null.
+var input = JsonSerializer.Deserialize<UserInput>("""{"type":"text","text":"hello","text_elements":[]}""", json)!;
+Check(JsonSerializer.Serialize(input, json).Contains("hello"), "Typed union roundtrip");
+await Reject<JsonException>(() => Task.FromResult(JsonSerializer.Deserialize<UserInput>("""{"type":"invalid"}""", json)));
+var optionsModel = new ThreadStartParams();
+Check(!JsonSerializer.Serialize(optionsModel, json).Contains("\"model\""), "Optional property omitted");
+optionsModel.Model = new Optional<string?>(null);
+Check(JsonSerializer.Serialize(optionsModel, json).Contains("\"model\":null"), "Explicit nullable property");
+
+// Roundtrip every branch of every named union, not just the first branch used by method samples.
+int unionBranches = 0;
+foreach (var definition in definitions)
+{
+    if (definition.Value is not JsonObject schema) continue;
+    var branches = schema["oneOf"] as JsonArray ?? schema["anyOf"] as JsonArray;
+    Type? type = typeof(CodexClient).Assembly.GetType("Example.Models." + Name(definition.Key));
+    if (branches is null || type?.GetProperty("Variant") is null) continue;
+    foreach (var branch in branches)
+    {
+        var sample = Sample(branch);
+        if (sample is JsonObject obj && schema["required"] is JsonArray common)
+            foreach (var member in common) obj[member!.ToString()] = Sample(schema["properties"]![member.ToString()]);
+        object? value;
+        try { value = JsonSerializer.Deserialize(sample?.ToJsonString() ?? "null", type, json); }
+        catch (Exception e) { throw new Exception("Union branch " + definition.Key + ": " + sample, e); }
+        Check(JsonNode.DeepEquals(JsonNode.Parse(JsonSerializer.Serialize(value, type, json)), sample), "Union branch roundtrip: " + definition.Key);
+        unionBranches++;
+    }
+}
+Check(unionBranches > 100, "Comprehensive union branch coverage");
+// WebSocket frames are exercised on both ends, including fragmented incoming messages.
+using var wsListener = new TcpListener(IPAddress.Loopback, 0);
+wsListener.Start();
+using var wsLocal = new TcpClient();
+var wsAccept = wsListener.AcceptTcpClientAsync(ct);
+await wsLocal.ConnectAsync(IPAddress.Loopback, ((IPEndPoint)wsListener.LocalEndpoint).Port, ct);
+using var wsRemote = await wsAccept;
+wsListener.Stop();
+using var localSocket = WebSocket.CreateFromStream(wsLocal.GetStream(), false, null, TimeSpan.Zero);
+using var remoteSocket = WebSocket.CreateFromStream(wsRemote.GetStream(), true, null, TimeSpan.Zero);
+await using (var wsTransport = new WebSocketJsonRpcTransport(localSocket))
+await using (var wsClient = new CodexClient(wsTransport))
+{
+    var pending = wsClient.ThreadLoadedList(new ThreadLoadedListParams(), ct).AsTask();
+    byte[] bytes = new byte[4096];
+    var message = await remoteSocket.ReceiveAsync(bytes.AsMemory(), ct);
+    var request = JsonNode.Parse(Encoding.UTF8.GetString(bytes, 0, message.Count))!.AsObject();
+    byte[] response = Encoding.UTF8.GetBytes(Reply(request, JsonNode.Parse("""{"data":["websocket"],"nextCursor":null}""")).ToJsonString());
+    await remoteSocket.SendAsync(response.AsMemory(0, 7), WebSocketMessageType.Text, false, ct);
+    await remoteSocket.SendAsync(response.AsMemory(7), WebSocketMessageType.Text, true, ct);
+    Check((await pending).Data[0] == "websocket", "Fragmented WebSocket response");
+}
+
+// Optional local smoke test: no model inference or persistent thread creation.
+if (Environment.GetEnvironmentVariable("CONTEXOR_CODEX_EXECUTABLE") is { Length: > 0 } executable)
+{
+    using var process = new Process { StartInfo = new ProcessStartInfo(executable) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true } };
+    process.StartInfo.ArgumentList.Add("app-server");
+    process.Start();
+    Task<string> stderr = process.StandardError.ReadToEndAsync();
+    try
+    {
+        await using var liveTransport = new StreamJsonRpcTransport(process.StandardOutput.BaseStream, process.StandardInput.BaseStream);
+        await using var live = new CodexClient(liveTransport);
+        var initializedResult = await live.Initialize(new InitializeParams { ClientInfo = new ClientInfo { Name = "contexor_test", Version = "1.0.0" } }, ct);
+        Check(!string.IsNullOrWhiteSpace(initializedResult.UserAgent), "Real Codex initialize");
+        await live.Initialized(ct);
+        var threads = await live.ThreadList(new ThreadListParams { Limit = 1 }, ct);
+        var models = await live.ModelList(new ModelListParams { Limit = 1 }, ct);
+        Console.WriteLine($"Real Codex smoke test passed: initialize, initialized, thread/list ({threads.Data.Count}), model/list ({models.Data.Count}).");
+    }
+    finally
+    {
+        if (!process.HasExited) process.Kill(true);
+        await process.WaitForExitAsync();
+        await stderr;
+    }
+}
+Console.WriteLine($"All Codex consumer checks passed: {calls} requests, {notificationCount} notifications, {serverRequests} server handlers, {unionBranches} union branches, stream/WebSocket, errors, cancellation, unions.");
+
+static class Handlers
+{
+    public static Func<T, CancellationToken, ValueTask<R>> Create<T, R>(string result) => (parameters, ct) => ValueTask.FromResult(JsonSerializer.Deserialize<R>(result, RpcJsonContext.Default.Options)!);
+}

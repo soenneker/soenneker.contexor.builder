@@ -1,0 +1,83 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Channels;
+using System.Threading.Tasks;
+using Example;
+using Example.Models;
+
+if (JsonSerializer.IsReflectionEnabledByDefault) throw new Exception("JSON reflection must be disabled.");
+using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+var ct = timeout.Token;
+var context = RpcJsonContext.Default;
+var input = JsonSerializer.Deserialize("""{"type":"text","text":"native","text_elements":[]}""", context.UserInput)!;
+if (!JsonSerializer.Serialize(input, context.UserInput).Contains("native")) throw new Exception("Union roundtrip failed.");
+var parameters = new ThreadStartParams { Model = new Optional<string?>(null), ApprovalsReviewer = new Optional<ApprovalsReviewer?>(null) };
+string serialized = JsonSerializer.Serialize(parameters, context.ThreadStartParams);
+if (!serialized.Contains("\"model\":null") || serialized.Contains("\"cwd\"")) throw new Exception("Optional semantics failed.");
+var restored = JsonSerializer.Deserialize(serialized, context.ThreadStartParams)!;
+if (!restored.ApprovalsReviewer.IsDefined || restored.ApprovalsReviewer.Value != null) throw new Exception("Nullable enum conversion failed.");
+
+await using (var transport = new ProbeTransport())
+await using (var client = new CodexClient(transport))
+{
+    var listed = await client.ThreadLoadedList(new ThreadLoadedListParams(), ct);
+    if (listed.Data[0] != "native-thread") throw new Exception("Typed RPC failed.");
+    var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    client.ThreadArchivedReceived += notification => { if (notification.ThreadId == "native-thread") received.TrySetResult(); };
+    transport.Emit("""{"method":"thread/archived","params":{"threadId":"native-thread"}}""");
+    await received.Task.WaitAsync(ct);
+    client.AttestationGenerateHandler = (_, _) => ValueTask.FromResult(new AttestationGenerateResponse { Token = "native-token" });
+    transport.Emit("""{"method":"attestation/generate","id":7,"params":{}}""");
+    JsonElement reply = await transport.Reply.Task.WaitAsync(ct);
+    if (reply.GetProperty("id").GetInt32() != 7 || reply.GetProperty("result").GetProperty("token").GetString() != "native-token") throw new Exception("Typed server handler failed.");
+}
+
+if (Environment.GetEnvironmentVariable("CONTEXOR_CODEX_EXECUTABLE") is { Length: > 0 } executable)
+{
+    using var process = new Process { StartInfo = new ProcessStartInfo(executable) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true } };
+    process.StartInfo.ArgumentList.Add("app-server");
+    process.Start();
+    Task<string> stderr = process.StandardError.ReadToEndAsync();
+    try
+    {
+        await using var transport = new StreamJsonRpcTransport(process.StandardOutput.BaseStream, process.StandardInput.BaseStream);
+        await using var client = new CodexClient(transport);
+        var result = await client.Initialize(new InitializeParams { ClientInfo = new ClientInfo { Name = "contexor_aot_test", Version = "1.0.0" } }, ct);
+        if (string.IsNullOrEmpty(result.UserAgent)) throw new Exception("Native initialize failed.");
+        await client.Initialized(ct);
+        await client.ModelList(new ModelListParams { Limit = 1 }, ct);
+        Console.WriteLine("Native AOT real Codex initialize/initialized/model-list passed.");
+    }
+    finally
+    {
+        if (!process.HasExited) process.Kill(true);
+        await process.WaitForExitAsync();
+        await stderr;
+    }
+}
+Console.WriteLine("Native AOT consumer checks passed: typed calls, notifications, server handlers, unions, nullable optionals; JSON reflection disabled.");
+
+sealed class ProbeTransport : IJsonRpcTransport
+{
+    private readonly Channel<JsonElement> _incoming = Channel.CreateUnbounded<JsonElement>();
+    public Task Completion => _incoming.Reader.Completion;
+    internal readonly TaskCompletionSource<JsonElement> Reply = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal void Emit(string json) { using var doc = JsonDocument.Parse(json); _incoming.Writer.TryWrite(doc.RootElement.Clone()); }
+    public ValueTask<JsonElement?> Send(JsonElement request, bool notification, CancellationToken cancellationToken = default)
+    {
+        if (notification) return ValueTask.FromResult<JsonElement?>(null);
+        using var doc = JsonDocument.Parse("{\"id\":" + request.GetProperty("id").GetRawText() + ",\"result\":{\"data\":[\"native-thread\"],\"nextCursor\":null}}");
+        return ValueTask.FromResult<JsonElement?>(doc.RootElement.Clone());
+    }
+    public async IAsyncEnumerable<JsonElement> ReadMessages([EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var message in _incoming.Reader.ReadAllAsync(cancellationToken)) yield return message;
+    }
+    public ValueTask WriteResponse(JsonElement response, CancellationToken cancellationToken = default) { Reply.TrySetResult(response); return ValueTask.CompletedTask; }
+    public ValueTask DisposeAsync() { _incoming.Writer.TryComplete(); return ValueTask.CompletedTask; }
+}
