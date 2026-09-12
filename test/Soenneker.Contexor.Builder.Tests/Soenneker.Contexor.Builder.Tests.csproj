@@ -26,7 +26,10 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Content Include="..\..\examples\*.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /><Content Include="ConsumerProgram.txt" CopyToOutputDirectory="PreserveNewest" /><Content Include="NativeAotConsumer.txt" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="Fixtures\codex_app_server_protocol.schemas.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="Fixtures\codex_app_server_protocol.v2.schemas.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="ConsumerProgram.txt" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="NativeAotConsumer.txt" CopyToOutputDirectory="PreserveNewest" />
         <ProjectReference Include="..\..\src\Soenneker.Contexor.Builder\Soenneker.Contexor.Builder.csproj" />
     </ItemGroup>
 
