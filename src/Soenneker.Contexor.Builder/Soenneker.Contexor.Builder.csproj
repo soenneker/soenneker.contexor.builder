@@ -50,8 +50,8 @@
         <PackageReference Include="Soenneker.Extensions.String" Version="4.0.758" />
         <PackageReference Include="Soenneker.Extensions.Task" Version="4.0.129" />
         <PackageReference Include="Soenneker.Extensions.ValueTask" Version="4.0.122" />
-        <PackageReference Include="Soenneker.Utils.Directory" Version="4.0.938" />
-        <PackageReference Include="Soenneker.Utils.File" Version="4.0.2272" />
+        <PackageReference Include="Soenneker.Utils.Directory" Version="4.0.939" />
+        <PackageReference Include="Soenneker.Utils.File" Version="4.0.2273" />
         <PackageReference Include="Soenneker.Utils.PooledStringBuilders" Version="4.0.31" />
     </ItemGroup>
 </Project>
