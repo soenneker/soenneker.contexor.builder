@@ -46,7 +46,7 @@
         <EmbeddedResource Include="Templates\*.txt" LogicalName="Contexor.Templates.%(Filename)%(Extension)" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
         <PackageReference Include="Soenneker.Extensions.Char" Version="4.0.103" />
-        <PackageReference Include="Soenneker.Extensions.Stream" Version="4.0.151" />
+        <PackageReference Include="Soenneker.Extensions.Stream" Version="4.0.153" />
         <PackageReference Include="Soenneker.Extensions.String" Version="4.0.758" />
         <PackageReference Include="Soenneker.Extensions.Task" Version="4.0.129" />
         <PackageReference Include="Soenneker.Extensions.ValueTask" Version="4.0.122" />
