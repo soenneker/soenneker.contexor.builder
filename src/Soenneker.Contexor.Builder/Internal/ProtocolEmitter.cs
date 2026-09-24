@@ -97,7 +97,7 @@ internal sealed class ProtocolEmitter
                 if (group.StartsWith("Client", StringComparison.Ordinal))
                 {
                     bool optional = hasParams && !required.Contains("params");
-                    if (optional) models.RegisterOptional(parameterType);
+
                     string argumentType = optional ? "Optional<" + parameterType + ">" : parameterType;
                     string argument = hasParams ? argumentType + " parameters" + (optional ? " = default" : "") + ", " : "";
                     string returnType = request ? "global::System.Threading.Tasks.ValueTask<" + responseType + ">" : "global::System.Threading.Tasks.ValueTask";
