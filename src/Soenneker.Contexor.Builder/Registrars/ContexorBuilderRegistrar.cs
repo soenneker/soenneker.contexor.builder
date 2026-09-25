@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Soenneker.Contexor.Builder.Abstract;
+using Soenneker.JsonSchema.ToCSharp.Registrars;
 using Soenneker.Utils.File.Registrars;
 using Soenneker.Utils.Directory.Registrars;
 
@@ -18,6 +19,7 @@ public static class ContexorBuilderRegistrar
     {
         services.AddFileUtilAsSingleton();
         services.AddDirectoryUtilAsSingleton();
+        services.AddJsonSchemaToCSharpAsSingleton();
         services.TryAddSingleton<IContexorBuilder, ContexorBuilder>();
 
         return services;
@@ -30,6 +32,7 @@ public static class ContexorBuilderRegistrar
     {
         services.AddFileUtilAsScoped();
         services.AddDirectoryUtilAsScoped();
+        services.AddJsonSchemaToCSharpAsScoped();
         services.TryAddScoped<IContexorBuilder, ContexorBuilder>();
 
         return services;

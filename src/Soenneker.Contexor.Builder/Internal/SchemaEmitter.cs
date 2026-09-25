@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using Soenneker.JsonSchema.ToCSharp;
+using Soenneker.JsonSchema.ToCSharp.Abstract;
 
 namespace Soenneker.Contexor.Builder.Internal;
 
@@ -14,7 +15,7 @@ internal sealed class SchemaEmitter
     private readonly JsonSchemaToCSharpResult _result;
     private readonly Dictionary<JsonNode, string> _pointers = new();
 
-    internal SchemaEmitter(JsonObject document, ContexorBuilderOptions options, CancellationToken ct)
+    internal SchemaEmitter(JsonObject document, ContexorBuilderOptions options, IJsonSchemaToCSharp jsonSchemaToCSharp, CancellationToken ct)
     {
         CSharpNames.Validate(options.Namespace, nameof(options.Namespace), true);
         CSharpNames.Validate(options.ClientName, nameof(options.ClientName));
@@ -51,7 +52,7 @@ internal sealed class SchemaEmitter
             }
         }
         schema["$ref"] = Pointer("ClientRequest");
-        _result = new JsonSchemaToCSharp().Generate(schema.ToJsonString(), new JsonSchemaToCSharpOptions
+        _result = jsonSchemaToCSharp.Generate(schema.ToJsonString(), new JsonSchemaToCSharpOptions
         {
             Namespace = options.Namespace,
             FailOnUntypedSchemas = options.FailOnUntypedSchemas,

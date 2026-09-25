@@ -7,6 +7,7 @@ using System.Linq;
 using System.Collections.Generic;
 using Soenneker.Contexor.Builder.Abstract;
 using Soenneker.Contexor.Builder.Internal;
+using Soenneker.JsonSchema.ToCSharp.Abstract;
 using Soenneker.Utils.File.Abstract;
 using Soenneker.Utils.Directory.Abstract;
 using Soenneker.Extensions.String;
@@ -15,7 +16,7 @@ using Soenneker.Extensions.ValueTask;
 
 namespace Soenneker.Contexor.Builder;
 
-public sealed class ContexorBuilder(IFileUtil fileUtil, IDirectoryUtil directoryUtil) : IContexorBuilder
+public sealed class ContexorBuilder(IFileUtil fileUtil, IDirectoryUtil directoryUtil, IJsonSchemaToCSharp jsonSchemaToCSharp) : IContexorBuilder
 {
     public ContexorBuildResult Generate(string schemaJson, ContexorBuilderOptions? options = null,
         CancellationToken cancellationToken = default)
@@ -24,7 +25,7 @@ public sealed class ContexorBuilder(IFileUtil fileUtil, IDirectoryUtil directory
         cancellationToken.ThrowIfCancellationRequested();
         options ??= new ContexorBuilderOptions();
         JsonObject document = JsonNode.Parse(schemaJson) as JsonObject ?? throw new ArgumentException("Expected a JSON definition object.");
-        return new ProtocolEmitter(document, options, cancellationToken).Generate();
+        return new ProtocolEmitter(document, options, jsonSchemaToCSharp, cancellationToken).Generate();
     }
 
     public async ValueTask<ContexorBuildResult> GenerateFile(string schemaPath, string outputDirectory,

@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
+using Soenneker.JsonSchema.ToCSharp.Abstract;
 using Soenneker.Utils.PooledStringBuilders;
 
 namespace Soenneker.Contexor.Builder.Internal;
@@ -12,13 +13,15 @@ internal sealed class ProtocolEmitter
 {
     private readonly JsonObject _document;
     private readonly ContexorBuilderOptions _options;
+    private readonly IJsonSchemaToCSharp _jsonSchemaToCSharp;
     private readonly CancellationToken _ct;
     private readonly List<string> _diagnostics = [];
 
-    internal ProtocolEmitter(JsonObject document, ContexorBuilderOptions options, CancellationToken ct)
+    internal ProtocolEmitter(JsonObject document, ContexorBuilderOptions options, IJsonSchemaToCSharp jsonSchemaToCSharp, CancellationToken ct)
     {
         _document = document;
         _options = options;
+        _jsonSchemaToCSharp = jsonSchemaToCSharp;
         _ct = ct;
         if (document["definitions"] is not JsonObject definitions || definitions["ClientRequest"] is not JsonObject)
             throw new ArgumentException("Expected a JSON Schema protocol bundle containing definitions.ClientRequest.");
@@ -68,7 +71,7 @@ internal sealed class ProtocolEmitter
 
     internal ContexorBuildResult Generate()
     {
-        var models = new SchemaEmitter(_document, _options, _ct);
+        var models = new SchemaEmitter(_document, _options, _jsonSchemaToCSharp, _ct);
         using var signatures = new PooledStringBuilder(8192);
         using var methods = new PooledStringBuilder(16384);
         using var notifications = new PooledStringBuilder(8192);
