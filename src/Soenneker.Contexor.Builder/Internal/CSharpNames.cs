@@ -46,7 +46,7 @@ internal static class CSharpNames
         return candidate;
     }
 
-    internal static string Literal(string value) => JsonSerializer.Serialize(value);
+    internal static string Literal(string value) => "\"" + JsonEncodedText.Encode(value).ToString() + "\"";
     internal static string Xml(string value) => SecurityElement.Escape(value)!.Replace("\r", " ").Replace("\n", " ");
 }
 
