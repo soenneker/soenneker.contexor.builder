@@ -53,7 +53,7 @@ public sealed class ContexorBuilderTests : HostedUnitTest
 
     [Test]
     [LocalOnly]
-    public async Task Generate_from_local_directory()
+    public async ValueTask Generate_from_local_directory()
     {
         const string inputDirectory = @"C:\codex\schemas";
         const string outputDirectory = @"C:\codex\output";
@@ -69,7 +69,7 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Schema_directory_outputs_source_and_project()
+    public async ValueTask Schema_directory_outputs_source_and_project()
     {
         string temporary = Path.Combine(Path.GetTempPath(), "contexor-directory-" + Guid.NewGuid().ToString("N"));
         await _directoryUtil.Create(temporary);
@@ -106,7 +106,7 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Schema_directory_loads_individual_schemas_and_excludes_output()
+    public async ValueTask Schema_directory_loads_individual_schemas_and_excludes_output()
     {
         string input = Path.Combine(Path.GetTempPath(), "contexor-individual-" + Guid.NewGuid().ToString("N"));
         string output = Path.Combine(input, "generated");
@@ -134,7 +134,7 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Codex_client_compiles_and_exchanges_bidirectional_messages()
+    public async ValueTask Codex_client_compiles_and_exchanges_bidirectional_messages()
     {
         string directory = Path.Combine(Path.GetTempPath(), "contexor-codex-" + Guid.NewGuid().ToString("N"));
         await _directoryUtil.Create(directory);
@@ -211,7 +211,7 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Generation_is_deterministic_and_emits_source_and_project()
+    public async ValueTask Generation_is_deterministic_and_emits_source_and_project()
     {
         ContexorBuildResult first = _builder.Generate(await Definition, await GetOptions());
         ContexorBuildResult second = _builder.Generate(await Definition, await GetOptions());
@@ -253,7 +253,7 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     }
 
     [Test]
-    public async Task File_generation_preserves_existing_files_and_supports_explicit_overwrite()
+    public async ValueTask File_generation_preserves_existing_files_and_supports_explicit_overwrite()
     {
         string directory = Path.Combine(Path.GetTempPath(), "contexor-files-" + Guid.NewGuid().ToString("N"));
         await _directoryUtil.Create(directory);
@@ -287,7 +287,7 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Incomplete_contracts_fail_instead_of_inventing_results()
+    public async ValueTask Incomplete_contracts_fail_instead_of_inventing_results()
     {
         string definition = await Definition;
         await Assert.That(() => _builder.Generate(definition)).Throws<ArgumentException>();
