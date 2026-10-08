@@ -28,7 +28,7 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     private Task<string> Supplement =>
         _fileUtil.Read(Path.Combine(AppContext.BaseDirectory, "codex_app_server_protocol.schemas.json"));
 
-    private async Task<ContexorBuilderOptions> GetOptions() => new()
+    private async Task<ContexorBuilderOptions> GetOptions(CancellationToken cancellationToken = default) => new()
     {
         Namespace = "Example", ClientName = "CodexClient", OmitJsonRpcVersion = true,
         SupplementalSchemaJson = [await Supplement],
@@ -53,7 +53,7 @@ public sealed class ContexorBuilderTests : HostedUnitTest
 
     [Test]
     [LocalOnly]
-    public async ValueTask Generate_from_local_directory()
+    public async ValueTask Generate_from_local_directory(CancellationToken cancellationToken)
     {
         const string inputDirectory = @"C:\codex\schemas";
         const string outputDirectory = @"C:\codex\output";
@@ -61,40 +61,40 @@ public sealed class ContexorBuilderTests : HostedUnitTest
         var options = new ContexorBuilderOptions
         {
             Namespace = "Soenneker", ClientName = "CodexClient", OmitJsonRpcVersion = true,
-            Overwrite = true, ResponseSchemaNames = (await GetOptions()).ResponseSchemaNames
+            Overwrite = true, ResponseSchemaNames = (await GetOptions(cancellationToken: cancellationToken)).ResponseSchemaNames
         };
 
-        ContexorBuildResult result = await _builder.GenerateDirectory(inputDirectory, outputDirectory, options);
+        ContexorBuildResult result = await _builder.GenerateDirectory(inputDirectory, outputDirectory, options, cancellationToken: cancellationToken);
         Console.WriteLine($"Generated {result.Files.Count} files at {Path.GetFullPath(outputDirectory)}.");
     }
 
     [Test]
-    public async ValueTask Schema_directory_outputs_source_and_project()
+    public async ValueTask Schema_directory_outputs_source_and_project(CancellationToken cancellationToken)
     {
         string temporary = Path.Combine(Path.GetTempPath(), "contexor-directory-" + Guid.NewGuid().ToString("N"));
-        await _directoryUtil.Create(temporary);
+        await _directoryUtil.Create(temporary, cancellationToken: cancellationToken);
         try
         {
             string input = Path.Combine(temporary, "schemas");
             string output = Path.Combine(temporary, "generated");
-            await _directoryUtil.Create(Path.Combine(input, "companion"));
-            await _fileUtil.Write(Path.Combine(input, "v2.json"), await Definition);
-            await _fileUtil.Write(Path.Combine(input, "companion", "full.json"), await Supplement);
+            await _directoryUtil.Create(Path.Combine(input, "companion"), cancellationToken: cancellationToken);
+            await _fileUtil.Write(Path.Combine(input, "v2.json"), await Definition, cancellationToken: cancellationToken);
+            await _fileUtil.Write(Path.Combine(input, "companion", "full.json"), await Supplement, cancellationToken: cancellationToken);
             var options = new ContexorBuilderOptions
             {
                 Namespace = "Example", ClientName = "CodexClient", OmitJsonRpcVersion = true,
-                Overwrite = true, ResponseSchemaNames = (await GetOptions()).ResponseSchemaNames
+                Overwrite = true, ResponseSchemaNames = (await GetOptions(cancellationToken: cancellationToken)).ResponseSchemaNames
             };
-            ContexorBuildResult result = await _builder.GenerateDirectory(input, output, options);
+            ContexorBuildResult result = await _builder.GenerateDirectory(input, output, options, cancellationToken: cancellationToken);
             await Assert.That(result.Files.ContainsKey("CodexClient.cs")).IsTrue();
             await Assert.That(result.Files.ContainsKey("RpcJsonContext.cs")).IsTrue();
             foreach ((string relative, string source) in result.Files)
             {
                 await Assert.That((relative.EndsWith(".cs", StringComparison.Ordinal) || relative == "CodexClient.csproj")).IsTrue();
-                await Assert.That(await _fileUtil.Read(Path.Combine(output, relative))).IsEqualTo(source);
+                await Assert.That(await _fileUtil.Read(Path.Combine(output, relative), cancellationToken: cancellationToken)).IsEqualTo(source);
             }
 
-            ContexorBuildResult expected = _builder.Generate(await Definition, await GetOptions());
+            ContexorBuildResult expected = _builder.Generate(await Definition, await GetOptions(cancellationToken: cancellationToken), cancellationToken: cancellationToken);
             await Assert.That(result.Files.Count).IsEqualTo(expected.Files.Count);
             await Assert.That(result.Files.All(p => expected.Files[p.Key] == p.Value)).IsTrue();
             Console.WriteLine($"Generated and verified {result.Files.Count} files at {Path.GetFullPath(output)}.");
@@ -106,26 +106,26 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     }
 
     [Test]
-    public async ValueTask Schema_directory_loads_individual_schemas_and_excludes_output()
+    public async ValueTask Schema_directory_loads_individual_schemas_and_excludes_output(CancellationToken cancellationToken)
     {
         string input = Path.Combine(Path.GetTempPath(), "contexor-individual-" + Guid.NewGuid().ToString("N"));
         string output = Path.Combine(input, "generated");
-        await _directoryUtil.Create(output);
-        await _directoryUtil.Create(Path.Combine(input, "models"));
+        await _directoryUtil.Create(output, cancellationToken: cancellationToken);
+        await _directoryUtil.Create(Path.Combine(input, "models"), cancellationToken: cancellationToken);
         try
         {
             await _fileUtil.Write(Path.Combine(input, "ClientRequest.json"),
-                """{"title":"ClientRequest","oneOf":[{"type":"object","required":["id","method","params"],"properties":{"id":{"type":"string"},"method":{"enum":["ping"]},"params":{"$ref":"#/definitions/PingParams"}}}]}""");
+                """{"title":"ClientRequest","oneOf":[{"type":"object","required":["id","method","params"],"properties":{"id":{"type":"string"},"method":{"enum":["ping"]},"params":{"$ref":"#/definitions/PingParams"}}}]}""", cancellationToken: cancellationToken);
             await _fileUtil.Write(Path.Combine(input, "models", "PingParams.json"),
-                """{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}""");
+                """{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}""", cancellationToken: cancellationToken);
             await _fileUtil.Write(Path.Combine(input, "models", "response.json"),
-                """{"title":"PingResponse","type":"object","properties":{"value":{"type":"integer"}},"required":["value"]}""");
-            await _fileUtil.Write(Path.Combine(output, "unrelated.json"), "not a schema");
-            ContexorBuildResult result = await _builder.GenerateDirectory(input, output);
+                """{"title":"PingResponse","type":"object","properties":{"value":{"type":"integer"}},"required":["value"]}""", cancellationToken: cancellationToken);
+            await _fileUtil.Write(Path.Combine(output, "unrelated.json"), "not a schema", cancellationToken: cancellationToken);
+            ContexorBuildResult result = await _builder.GenerateDirectory(input, output, cancellationToken: cancellationToken);
             await Assert.That(result.Files.ContainsKey("Models/PingParams.cs")).IsTrue();
             await Assert.That(result.Files.ContainsKey("Models/PingResponse.cs")).IsTrue();
-            await Assert.That(await _fileUtil.Read(Path.Combine(output, "unrelated.json"))).IsEqualTo("not a schema");
-            await Assert.That(async () => await _builder.GenerateDirectory(input, output)).Throws<IOException>();
+            await Assert.That(await _fileUtil.Read(Path.Combine(output, "unrelated.json"), cancellationToken: cancellationToken)).IsEqualTo("not a schema");
+            await Assert.That(async () => await _builder.GenerateDirectory(input, output, cancellationToken: cancellationToken)).Throws<IOException>();
         }
         finally
         {
@@ -134,15 +134,15 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     }
 
     [Test]
-    public async ValueTask Codex_client_compiles_and_exchanges_bidirectional_messages()
+    public async ValueTask Codex_client_compiles_and_exchanges_bidirectional_messages(CancellationToken cancellationToken)
     {
         string directory = Path.Combine(Path.GetTempPath(), "contexor-codex-" + Guid.NewGuid().ToString("N"));
-        await _directoryUtil.Create(directory);
+        await _directoryUtil.Create(directory, cancellationToken: cancellationToken);
         try
         {
             string input = Path.Combine(directory, "input.json");
-            await _fileUtil.Write(input, await Definition);
-            ContexorBuildResult result = await _builder.GenerateFile(input, Path.Combine(directory, "Generated"), await GetOptions());
+            await _fileUtil.Write(input, await Definition, cancellationToken: cancellationToken);
+            ContexorBuildResult result = await _builder.GenerateFile(input, Path.Combine(directory, "Generated"), await GetOptions(cancellationToken: cancellationToken), cancellationToken: cancellationToken);
             await _fileUtil.Write(Path.Combine(directory, "Consumer.csproj"), """
                 <Project Sdk="Microsoft.NET.Sdk">
                   <PropertyGroup>
@@ -158,24 +158,24 @@ public sealed class ContexorBuilderTests : HostedUnitTest
                     <ProjectReference Include="Generated/CodexClient.csproj" />
                   </ItemGroup>
                 </Project>
-                """);
+                """, cancellationToken: cancellationToken);
             await _fileUtil.Write(Path.Combine(directory, "Program.cs"),
-                await _fileUtil.Read(Path.Combine(AppContext.BaseDirectory, "ConsumerProgram.txt")));
-            await _fileUtil.Write(Path.Combine(directory, "supplement.json"), await Supplement);
+                await _fileUtil.Read(Path.Combine(AppContext.BaseDirectory, "ConsumerProgram.txt"), cancellationToken: cancellationToken), cancellationToken: cancellationToken);
+            await _fileUtil.Write(Path.Combine(directory, "supplement.json"), await Supplement, cancellationToken: cancellationToken);
             string output = await RunProcess("dotnet", directory, "run --project Consumer.csproj --verbosity quiet -p:TreatWarningsAsErrors=true",
-                TimeSpan.FromMinutes(3));
+                TimeSpan.FromMinutes(3), cancellationToken: cancellationToken);
             await Assert.That(output).Contains("All Codex consumer checks passed");
             if (Environment.GetEnvironmentVariable("CONTEXOR_NATIVE_AOT") == "1")
             {
                 await _fileUtil.Write(Path.Combine(directory, "Program.cs"),
-                    await _fileUtil.Read(Path.Combine(AppContext.BaseDirectory, "NativeAotConsumer.txt")));
+                    await _fileUtil.Read(Path.Combine(AppContext.BaseDirectory, "NativeAotConsumer.txt"), cancellationToken: cancellationToken), cancellationToken: cancellationToken);
                 string published = Path.Combine(directory, "native");
                 await RunProcess("dotnet", directory,
                     $"publish Consumer.csproj -c Release -r {System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier} " +
                     "-p:PublishAot=true -p:TrimmerSingleWarn=false -p:ILLinkTreatWarningsAsErrors=true " +
-                    "-p:IlcTreatWarningsAsErrors=true -o native -v quiet");
+                    "-p:IlcTreatWarningsAsErrors=true -o native -v quiet", cancellationToken: cancellationToken);
                 output += await RunProcess(
-                    Path.Combine(published, OperatingSystem.IsWindows() ? "Consumer.exe" : "Consumer"), directory);
+                    Path.Combine(published, OperatingSystem.IsWindows() ? "Consumer.exe" : "Consumer"), directory, cancellationToken: cancellationToken);
                 await Assert.That(output).Contains("Native AOT consumer checks passed");
             }
 
@@ -185,12 +185,12 @@ public sealed class ContexorBuilderTests : HostedUnitTest
                 foreach ((string relative, string contents) in result.Files)
                 {
                     string path = Path.Combine(artifactDirectory, relative);
-                    await _directoryUtil.Create(Path.GetDirectoryName(path)!);
-                    await _fileUtil.Write(path, contents);
+                    await _directoryUtil.Create(Path.GetDirectoryName(path)!, cancellationToken: cancellationToken);
+                    await _fileUtil.Write(path, contents, cancellationToken: cancellationToken);
                 }
 
                 await _fileUtil.Write(Path.Combine(artifactDirectory, "verification.txt"),
-                    $"Generated {result.Files.Count} files.\n" + output);
+                    $"Generated {result.Files.Count} files.\n" + output, cancellationToken: cancellationToken);
             }
         }
         finally
@@ -203,18 +203,18 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     }
 
     private async Task<string> RunProcess(string executable, string directory, string arguments = "",
-        TimeSpan? timeout = null)
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         List<string> output = await _processUtil.Start(executable, workingDirectory: directory, arguments: arguments,
-            waitForExit: true, timeout: timeout ?? TimeSpan.FromMinutes(5));
+            waitForExit: true, timeout: timeout ?? TimeSpan.FromMinutes(5), cancellationToken: cancellationToken);
         return string.Join(Environment.NewLine, output);
     }
 
     [Test]
-    public async ValueTask Generation_is_deterministic_and_emits_source_and_project()
+    public async ValueTask Generation_is_deterministic_and_emits_source_and_project(CancellationToken cancellationToken)
     {
-        ContexorBuildResult first = _builder.Generate(await Definition, await GetOptions());
-        ContexorBuildResult second = _builder.Generate(await Definition, await GetOptions());
+        ContexorBuildResult first = _builder.Generate(await Definition, await GetOptions(cancellationToken: cancellationToken), cancellationToken: cancellationToken);
+        ContexorBuildResult second = _builder.Generate(await Definition, await GetOptions(cancellationToken: cancellationToken), cancellationToken: cancellationToken);
         await Assert.That(first.Files.All(x => (x.Key.EndsWith(".cs", StringComparison.Ordinal) || x.Key == "CodexClient.csproj"))).IsTrue();
         await Assert.That(first.Files.All(x => second.Files[x.Key] == x.Value)).IsTrue();
         await Assert.That(first.Diagnostics.Any(x => x.Contains("uses JsonElement"))).IsFalse();
@@ -253,29 +253,29 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     }
 
     [Test]
-    public async ValueTask File_generation_preserves_existing_files_and_supports_explicit_overwrite()
+    public async ValueTask File_generation_preserves_existing_files_and_supports_explicit_overwrite(CancellationToken cancellationToken)
     {
         string directory = Path.Combine(Path.GetTempPath(), "contexor-files-" + Guid.NewGuid().ToString("N"));
-        await _directoryUtil.Create(directory);
+        await _directoryUtil.Create(directory, cancellationToken: cancellationToken);
         // A small real protocol verifies file behavior without writing the complete Codex fixture repeatedly.
         const string schema =
             """{"definitions":{"ClientRequest":{"oneOf":[{"type":"object","required":["id","method"],"properties":{"id":{"type":"string"},"method":{"enum":["ping"]}}}]},"PingResponse":{"type":"object"}}}""";
         try
         {
             string input = Path.Combine(directory, "schema.json");
-            await _fileUtil.Write(input, schema);
-            await _fileUtil.Write(Path.Combine(directory, "UserCode.cs"), "// Keep me");
-            await _builder.GenerateFile(input, directory);
-            await Assert.That(async () => await _builder.GenerateFile(input, directory)).Throws<IOException>();
-            await _fileUtil.Write(Path.Combine(directory, "RpcClient.cs"), "// stale");
-            await _fileUtil.Write(Path.Combine(directory, "RpcClient.csproj"), "<!-- stale -->");
-            ContexorBuildResult result = await _builder.GenerateFile(input, directory, new ContexorBuilderOptions { Overwrite = true });
-            await Assert.That(await _fileUtil.Read(Path.Combine(directory, "RpcClient.cs")))
+            await _fileUtil.Write(input, schema, cancellationToken: cancellationToken);
+            await _fileUtil.Write(Path.Combine(directory, "UserCode.cs"), "// Keep me", cancellationToken: cancellationToken);
+            await _builder.GenerateFile(input, directory, cancellationToken: cancellationToken);
+            await Assert.That(async () => await _builder.GenerateFile(input, directory, cancellationToken: cancellationToken)).Throws<IOException>();
+            await _fileUtil.Write(Path.Combine(directory, "RpcClient.cs"), "// stale", cancellationToken: cancellationToken);
+            await _fileUtil.Write(Path.Combine(directory, "RpcClient.csproj"), "<!-- stale -->", cancellationToken: cancellationToken);
+            ContexorBuildResult result = await _builder.GenerateFile(input, directory, new ContexorBuilderOptions { Overwrite = true }, cancellationToken: cancellationToken);
+            await Assert.That(await _fileUtil.Read(Path.Combine(directory, "RpcClient.cs"), cancellationToken: cancellationToken))
                         .IsEqualTo(result.Files["RpcClient.cs"]);
-            await Assert.That(await _fileUtil.Read(Path.Combine(directory, "RpcClient.csproj")))
+            await Assert.That(await _fileUtil.Read(Path.Combine(directory, "RpcClient.csproj"), cancellationToken: cancellationToken))
                         .IsEqualTo(result.Files["RpcClient.csproj"]);
-            await Assert.That(await _fileUtil.Read(Path.Combine(directory, "UserCode.cs"))).IsEqualTo("// Keep me");
-            await Assert.That(await _fileUtil.Read(input)).IsEqualTo(schema);
+            await Assert.That(await _fileUtil.Read(Path.Combine(directory, "UserCode.cs"), cancellationToken: cancellationToken)).IsEqualTo("// Keep me");
+            await Assert.That(await _fileUtil.Read(input, cancellationToken: cancellationToken)).IsEqualTo(schema);
         }
         finally
         {
@@ -287,12 +287,12 @@ public sealed class ContexorBuilderTests : HostedUnitTest
     }
 
     [Test]
-    public async ValueTask Incomplete_contracts_fail_instead_of_inventing_results()
+    public async ValueTask Incomplete_contracts_fail_instead_of_inventing_results(CancellationToken cancellationToken)
     {
         string definition = await Definition;
-        await Assert.That(() => _builder.Generate(definition)).Throws<ArgumentException>();
-        await Assert.That(() => _builder.Generate("null")).Throws<ArgumentException>();
-        await Assert.That(() => _builder.Generate("""{"openrpc":"1.2.6","methods":[]}""")).Throws<ArgumentException>();
+        await Assert.That(() => _builder.Generate(definition, cancellationToken: cancellationToken)).Throws<ArgumentException>();
+        await Assert.That(() => _builder.Generate("null", cancellationToken: cancellationToken)).Throws<ArgumentException>();
+        await Assert.That(() => _builder.Generate("""{"openrpc":"1.2.6","methods":[]}""", cancellationToken: cancellationToken)).Throws<ArgumentException>();
         await Assert.That(() => _builder.Generate(definition, cancellationToken: new CancellationToken(true)))
                     .Throws<OperationCanceledException>();
     }
