@@ -2,7 +2,7 @@
 
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
+        <TargetFramework>net11.0</TargetFramework>
         <Nullable>enable</Nullable>
         <IsAotCompatible>true</IsAotCompatible>
         <Platforms>AnyCPU</Platforms>
@@ -11,7 +11,7 @@
 
     <PropertyGroup>
         <Description>Generates strongly typed C# JSON-RPC 2.0 clients from JSON Schema protocol bundles, including Codex app-server.</Description>
-        <Version Condition="'$(BUILD_VERSION)' == ''">4.0.0</Version>
+        <Version Condition="'$(BUILD_VERSION)' == ''">11.0.0</Version>
         <Version Condition="'$(BUILD_VERSION)' != ''">$(BUILD_VERSION)</Version>
         <AssemblyName>Soenneker.Contexor.Builder</AssemblyName>
         <PackageId>Soenneker.Contexor.Builder</PackageId>
@@ -46,9 +46,9 @@
 
     <ItemGroup>
         <EmbeddedResource Include="Templates\*.txt" LogicalName="Contexor.Templates.%(Filename)%(Extension)" />
-        <PackageReference Include="Soenneker.JsonSchema.ToCSharp" Version="4.0.43" />
+        <PackageReference Include="Soenneker.JsonSchema.ToCSharp" Version="4.0.44" />
         <PackageReference Include="Soenneker.Utils.Directory" Version="4.0.967" />
-        <PackageReference Include="Soenneker.Utils.File" Version="4.0.2319" />
+        <PackageReference Include="Soenneker.Utils.File" Version="4.0.2320" />
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="Soenneker.Extensions.ValueTask" Version="4.0.133" />
