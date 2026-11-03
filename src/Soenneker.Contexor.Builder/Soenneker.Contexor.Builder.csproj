@@ -47,8 +47,8 @@
 
     <ItemGroup>
         <EmbeddedResource Include="Templates\*.txt" LogicalName="Contexor.Templates.%(Filename)%(Extension)" />
-        <PackageReference Include="Soenneker.JsonSchema.ToCSharp" Version="11.0.57" />
-        <PackageReference Include="Soenneker.Utils.Directory" Version="11.0.970" />
+        <PackageReference Include="Soenneker.JsonSchema.ToCSharp" Version="11.0.58" />
+        <PackageReference Include="Soenneker.Utils.Directory" Version="11.0.971" />
     </ItemGroup>
     <ItemGroup>
     </ItemGroup>
