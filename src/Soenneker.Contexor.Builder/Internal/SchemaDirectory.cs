@@ -12,6 +12,9 @@ namespace Soenneker.Contexor.Builder.Internal;
 
 internal static class SchemaDirectory
 {
+    private static readonly string[] StandaloneKeys = ["properties", "required", "oneOf", "anyOf", "allOf", "$ref", "enum", "const", "items"];
+    private static readonly string[] SchemaKeys = ["$ref", "$schema", "type", "title", "description", "properties", "required", "oneOf", "anyOf", "allOf", "enum", "const", "items", "additionalProperties"];
+
     internal static async ValueTask<IEnumerable<string>> Files(string input, string output, IDirectoryUtil directoryUtil, CancellationToken cancellationToken)
     {
         var paths = new List<string>();
@@ -41,18 +44,27 @@ internal static class SchemaDirectory
     internal static JsonObject Definitions(string json, string path)
     {
         JsonObject root = JsonNode.Parse(json) as JsonObject ?? throw new ArgumentException($"Expected a JSON Schema object in {path}.");
-        JsonObject definitions = root["definitions"] is JsonObject bundled ? (JsonObject)bundled.DeepClone() : new JsonObject();
-        bool standalone = !root.ContainsKey("definitions") || new[] { "properties", "required", "oneOf", "anyOf", "allOf", "$ref", "enum", "const", "items" }.Any(root.ContainsKey);
+        JsonObject definitions = root["definitions"] as JsonObject ?? new JsonObject();
+        bool standalone = !root.ContainsKey("definitions") || HasAnyKey(root, StandaloneKeys);
+        if (standalone && !IsSchema(root)) throw new ArgumentException($"Expected a JSON Schema in {path}.");
+
+        root.Remove("definitions");
         if (standalone)
         {
-            if (!IsSchema(root)) throw new ArgumentException($"Expected a JSON Schema in {path}.");
             string name = root["title"]?.GetValue<string>() ?? Path.GetFileNameWithoutExtension(path);
-            root.Remove("definitions");
             definitions[name] = root;
         }
         return definitions;
     }
 
     internal static bool IsSchema(JsonObject schema) => schema.Count == 0 ||
-        new[] { "$ref", "$schema", "type", "title", "description", "properties", "required", "oneOf", "anyOf", "allOf", "enum", "const", "items", "additionalProperties" }.Any(schema.ContainsKey);
+        HasAnyKey(schema, SchemaKeys);
+
+    private static bool HasAnyKey(JsonObject schema, string[] keys)
+    {
+        foreach (string key in keys)
+            if (schema.ContainsKey(key))
+                return true;
+        return false;
+    }
 }

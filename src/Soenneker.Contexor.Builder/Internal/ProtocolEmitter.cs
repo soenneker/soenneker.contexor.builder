@@ -176,7 +176,8 @@ internal sealed class ProtocolEmitter
         if (_options.ResponseSchemaNames.TryGetValue(method, out string? configured)) name = configured;
         else
         {
-            string? parameterName = parameter?["$ref"]?.GetValue<string>().Split('/').Last();
+            string? reference = parameter?["$ref"]?.GetValue<string>();
+            string? parameterName = reference?[(reference.LastIndexOf('/') + 1)..];
             name = parameterName?.EndsWith("Params", StringComparison.Ordinal) == true ? parameterName[..^6] + "Response" : CSharpNames.Identifier(method) + "Response";
             _diagnostics.Add("Inferred " + method + " result as " + name + " by naming convention; ResponseSchemaNames can override this association.");
         }
